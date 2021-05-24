@@ -1,6 +1,8 @@
 import os
 import secrets
 from PIL import Image
+import threading
+import time
 
 from flask import render_template, url_for, flash, redirect,request, abort
 from event import app, db, bcrypt,mail # type: ignore
@@ -8,6 +10,7 @@ from event.forms import RegistrationForm, LoginForm, UpdateAccountForm, EventFor
 from event.models import User, Event, Registered,Temp # type: ignore
 from flask_login import login_user, current_user, logout_user, login_required
 from flask_mail import Message
+from wtforms.validators import ValidationError
 
 
 @app.route("/")
@@ -34,6 +37,19 @@ def approve_admin():
         abort(403)
 
 
+def send_verification_email(temp):
+    token = temp.get_verification_email()
+    msg = Message('Verify your email.',
+                  sender='noreply@demo.com',
+                  recipients=[temp.email])
+    msg.body = f'''To verify your email, visit the following link:
+{url_for('resett_token', token=token, _external=True)}
+
+If you did not initiate the verification,please ignore.
+'''
+    mail.send(msg)
+
+
 
 @app.route("/register", methods=['GET', 'POST'])
 def register():
@@ -46,13 +62,26 @@ def register():
     if form.validate_on_submit():
         hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
         temp = Temp(username=form.username.data, email=form.email.data, password=hashed_password)
-        db.session.add(temp)
-        db.session.commit()
-        temp = Temp.query.filter_by(email=form.email.data).first()
-        send_verification_email(temp)
-        flash('Please click on the verification link sent to your email address.', 'info')
-
-        return redirect(url_for('login'))
+        check_temp_username=Temp.query.filter_by(username=temp.username).first()
+        check_temp_email=Temp.query.filter_by(email=temp.email).first()
+        if check_temp_username and check_temp_email:
+            if check_temp_username.email==check_temp_email:
+                temp = Temp.query.filter_by(email=form.email.data).first()
+                send_verification_email(temp)
+                flash('Please click on the verification link sent to your email address.', 'info')
+                return redirect(url_for('login'))
+            else:
+                flash('Username currently unavailable.Please try another username.','danger')
+        elif check_temp_username and not check_temp_email:
+            flash('Username currently unavailable.Please try another username.','danger')
+        elif check_temp_email and not check_temp_username:
+            flash('The email adress cannot be used currently.Please try again after some time or use a different email address.','danger')
+        else:
+            db.session.add(temp)
+            db.session.commit()
+            send_verification_email(temp)
+            flash('Please click on the verification link sent to your email address.', 'info')
+            return redirect(url_for('login'))
     return render_template('register.html', title='Register', form=form)
 
 
@@ -363,17 +392,7 @@ def confirm_event(token):
         flash('Your attendence for the event is recorded', 'success')
         return redirect(url_for('home'))   
 
-def send_verification_email(temp):
-    token = temp.get_verification_email()
-    msg = Message('Verify your email.',
-                  sender='noreply@demo.com',
-                  recipients=[temp.email])
-    msg.body = f'''To verify your email, visit the following link:
-{url_for('resett_token', token=token, _external=True)}
 
-If you did not initiate the verification,please ignore.
-'''
-    mail.send(msg)
 
 
 @app.route("/register/<token>", methods=['GET', 'POST'])
@@ -386,12 +405,6 @@ def resett_token(token):
         return redirect(url_for('register'))
 
     if temp:
-        check_user=User.query.filter_by(username=temp.username).all()
-        if len(check_user)>0:
-            Temp.query.filter_by(username=temp.username).delete()
-            db.session.commit()
-            flash('Username has already been taken','warning')
-            return redirect(url_for('register'))
         user = User(username=temp.username, email=temp.email, password=temp.password)
         db.session.add(user)
         Temp.query.filter_by(email=temp.email).delete()

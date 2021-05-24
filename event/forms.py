@@ -4,7 +4,7 @@ from flask_wtf.file import FileField, FileAllowed
 from flask_login import current_user
 from wtforms import StringField, PasswordField, SubmitField, BooleanField, TextAreaField,TimeField,IntegerField
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, InputRequired
-from event.models import User # type: ignore
+from event.models import User,Temp # type: ignore
 from wtforms.fields.html5 import DateField
 
 
@@ -29,6 +29,12 @@ class RegistrationForm(FlaskForm):
         if user:
             raise ValidationError(
                 'That email is taken. Please choose a different one.')
+
+
+
+
+        
+
 
 class LoginForm(FlaskForm):
     email = StringField('Email',
